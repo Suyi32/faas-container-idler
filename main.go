@@ -8,9 +8,10 @@ import (
 	"fmt"
 	"log"
 	"context"
-	// "io/ioutil"
+	// "encoding/json"
 	"io"
 
+	// types "k8s.io/apimachinery/pkg/types"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 	"k8s.io/client-go/rest"
@@ -20,6 +21,12 @@ import (
 )
 
 const metricPort = 8081
+
+type patchStringValue struct {
+    Op    string `json:"op"`
+    Path  string `json:"path"`
+    Value string `json:"value"`
+}
 
 func main() {
 	log.Println("Start running faas container idler.")
@@ -122,6 +129,9 @@ func reconcile(client *http.Client, clientset *kubernetes.Clientset, inactivityD
 				log.Println(totalKey, total)
 				log.Println(inflightKey, inflight)
 				getReplicas(funcName, clientset)
+				
+				
+				labelDeleteCost(address.TargetRef.Name, clientset)
 
 				history, found := podMap[address.TargetRef.Name]
 				if !found {
@@ -146,6 +156,38 @@ func reconcile(client *http.Client, clientset *kubernetes.Clientset, inactivityD
 	}
 	
 	
+}
+
+func labelDeleteCost(podName string, clientset *kubernetes.Clientset) {
+	pod, _ := clientset.CoreV1().Pods("openfaas-fn").Get(context.TODO(), podName, metav1.GetOptions{}) 
+
+	newPod := pod.DeepCopy()
+	ann := newPod.ObjectMeta.Annotations
+	ann["controller.kubernetes.io/pod-deletion-cost"] = "-100"
+	newPod.ObjectMeta.Annotations = ann
+
+	_, err := clientset.CoreV1().Pods(newPod.ObjectMeta.Namespace).Update(context.TODO(), newPod, metav1.UpdateOptions{})
+	if err != nil {
+		log.Println(err)
+	}
+
+	log.Println("Pod annotation updated: ", pod.ObjectMeta.Name)
+
+	/*
+	payload := []patchStringValue{{
+		Op:    "add",
+		Path:  "/metadata/labels/controller.kubernetes.io/pod-deletion-cost",
+		Value: "-100",
+	}}
+	payloadBytes, _ := json.Marshal(payload)
+
+	_, updateErr := clientset.CoreV1().Pods(pod.GetNamespace()).Patch(context.TODO(), pod.GetName(), types.JSONPatchType, payloadBytes, metav1.PatchOptions{})
+	if updateErr == nil {
+		log.Println(fmt.Sprintf("Pod %s labelled successfully.", pod.GetName()))
+	} else {
+		log.Println(updateErr)
+	}
+	*/
 }
 
 func scaleDownbyOne(funcName string, clientset *kubernetes.Clientset) {

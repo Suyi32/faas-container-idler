@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: faas-idler
-        image: smarterlsy/faas-container-idler@sha256:bc402f6746c61c609467893695066e466aa0ab9109245716712dcd029dec9fd3
+        image: smarterlsy/faas-container-idler@sha256:93e07b68bcb3a4b0f42b9601f2f979e95e7e0411f84d471932600e4f426172fb
         imagePullPolicy: Always
         env:
           - name: inactivity_duration
