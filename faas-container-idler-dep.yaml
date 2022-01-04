@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: faas-container-idler
+  namespace: openfaas-fn
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: faas-container-idler
+  template:
+    metadata:
+      labels:
+        app: faas-container-idler
+    spec:
+      containers:
+      - name: faas-idler
+        image: smarterlsy/faas-container-idler@sha256:bc402f6746c61c609467893695066e466aa0ab9109245716712dcd029dec9fd3
+        imagePullPolicy: Always
+        env:
+          - name: inactivity_duration
+            value: "5m"
+        command:
+          - /home/app/faas-idler
