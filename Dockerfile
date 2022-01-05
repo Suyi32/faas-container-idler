@@ -19,6 +19,7 @@ COPY --from=builder /usr/bin/faas-idler /home/app/
 
 RUN chown -R app /home/app
 USER app
+RUN mkdir -p /home/app/podLog
 
 
 EXPOSE 8080

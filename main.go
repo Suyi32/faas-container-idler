@@ -8,25 +8,23 @@ import (
 	"fmt"
 	"log"
 	"context"
-	// "encoding/json"
 	"io"
+	"bytes"
+	"bufio"
 
-	// types "k8s.io/apimachinery/pkg/types"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 	"k8s.io/client-go/rest"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
 	// "k8s.io/client-go/tools/clientcmd"
 )
 
 const metricPort = 8081
+const keep_alive_sec = 300
+const savePath string = "/home/app/podLog"
 
-type patchStringValue struct {
-    Op    string `json:"op"`
-    Path  string `json:"path"`
-    Value string `json:"value"`
-}
 
 func main() {
 	log.Println("Start running faas container idler.")
@@ -46,7 +44,6 @@ func main() {
     }
 	*/
 
-	
 	config, err := rest.InClusterConfig()
 	if err != nil {
 		panic(err.Error())
@@ -59,19 +56,20 @@ func main() {
 	
 	podMap := make(map[string][]int64)
 
-	reconcileInterval := time.Second * 10000
+	reconcileInterval := time.Second * 10
 
 	client := &http.Client{}
-	inactivityDurationVal := os.Getenv("inactivity_duration")
 
+	/*
+	inactivityDurationVal := os.Getenv("inactivity_duration")
 	if len(inactivityDurationVal) == 0 {
 		inactivityDurationVal = "5m"
 	}
-
 	inactivityDuration, _ := time.ParseDuration(inactivityDurationVal)
+	*/
 
 	for {
-		reconcile(client, clientset, inactivityDuration, podMap)
+		reconcile(client, clientset, podMap)
 		time.Sleep(reconcileInterval)
 		log.Printf("\n")
 	}
@@ -79,7 +77,7 @@ func main() {
 
 
 
-func reconcile(client *http.Client, clientset *kubernetes.Clientset, inactivityDuration time.Duration, podMap map[string][]int64) {
+func reconcile(client *http.Client, clientset *kubernetes.Clientset, podMap map[string][]int64) {
 	endpoints, err := clientset.CoreV1().Endpoints("openfaas-fn").List(context.Background(), metav1.ListOptions{})
 	if err != nil {
 		panic(err.Error())
@@ -126,27 +124,27 @@ func reconcile(client *http.Client, clientset *kubernetes.Clientset, inactivityD
 					inflight = inflightMetrics.Metric[0].GetCounter().GetValue()
 				}
 
-				log.Println(totalKey, total)
-				log.Println(inflightKey, inflight)
+				log.Println(totalKey, total, inflightKey, inflight)
 				getReplicas(funcName, clientset)
-				
-				
-				labelDeleteCost(address.TargetRef.Name, clientset)
 
 				history, found := podMap[address.TargetRef.Name]
+
 				if !found {
 					podMap[address.TargetRef.Name] = make([]int64, 2)
 					podMap[address.TargetRef.Name][0] = int64(total)
 					podMap[address.TargetRef.Name][1] = time.Now().Unix()
 				} else {
+					log.Println("total: ", history[0], "last: ", history[1])
 					ifRemove := getIfRemove(int64(total), int64(inflight), history)
 					if ifRemove {
-						log.Println("Start Removing idle containers: ", address.TargetRef.Name)
+						log.Println("Removing idle pod: ", address.TargetRef.Name, ", Idle From: ", time.Unix(history[1], 0).Format("2006-01-02_15:04:05"), ", To: ", time.Now().Format("2006-01-02_15:04:05"))
 						/*
 						1. Save logs
 						2. Label deleteCost
 						3. ScaleDownByOne
 						*/
+						savePodLog(address.TargetRef.Name, clientset)
+						labelDeleteCost(address.TargetRef.Name, clientset)
 						scaleDownbyOne(funcName, clientset)
 					}
 				}
@@ -173,21 +171,6 @@ func labelDeleteCost(podName string, clientset *kubernetes.Clientset) {
 
 	log.Println("Pod annotation updated: ", pod.ObjectMeta.Name)
 
-	/*
-	payload := []patchStringValue{{
-		Op:    "add",
-		Path:  "/metadata/labels/controller.kubernetes.io/pod-deletion-cost",
-		Value: "-100",
-	}}
-	payloadBytes, _ := json.Marshal(payload)
-
-	_, updateErr := clientset.CoreV1().Pods(pod.GetNamespace()).Patch(context.TODO(), pod.GetName(), types.JSONPatchType, payloadBytes, metav1.PatchOptions{})
-	if updateErr == nil {
-		log.Println(fmt.Sprintf("Pod %s labelled successfully.", pod.GetName()))
-	} else {
-		log.Println(updateErr)
-	}
-	*/
 }
 
 func scaleDownbyOne(funcName string, clientset *kubernetes.Clientset) {
@@ -208,6 +191,44 @@ func scaleDownbyOne(funcName string, clientset *kubernetes.Clientset) {
 	}
 }
 
+func savePodLog(podName string, clientset *kubernetes.Clientset) {
+	podLogOpts := corev1.PodLogOptions{}
+	req := clientset.CoreV1().Pods("openfaas-fn").GetLogs(podName, &podLogOpts)
+	podLogs, err := req.Stream(context.TODO())
+	if err != nil {
+        log.Println("error in opening stream") 
+		panic(err.Error())
+    }
+	defer podLogs.Close()
+	buf := new(bytes.Buffer)
+    _, err = io.Copy(buf, podLogs)
+    if err != nil {
+         log.Println("error in copy information from podLogs to buf")
+		 panic(err.Error())
+    }
+    str := buf.String()
+	// log.Println("Pod Logs: ")
+	// log.Println(str)
+
+
+	filePath := fmt.Sprintf("%s/%s_%s.log", savePath, podName, time.Now().Format("2006-01-02_15:04:05"))
+	f, err := os.Create(filePath)
+	if err != nil {
+		log.Println("Podlog write error.")
+		panic(err.Error())
+	}
+
+	defer f.Close()
+
+	w := bufio.NewWriter(f)
+	_, err = w.WriteString(str)
+	if err != nil {
+		log.Println("Podlog write error.")
+		panic(err.Error())
+	}
+	w.Flush()
+}
+
 func getReplicas(funcName string, clientset *kubernetes.Clientset) {
 	deployment, err := clientset.AppsV1().Deployments("openfaas-fn").Get(context.TODO(), funcName, metav1.GetOptions{})
 	if err != nil {
@@ -222,7 +243,7 @@ func getIfRemove(total int64, inflight int64, history []int64) bool {
 	if inflight == 0 {
 		if history[0] == total {
 			idleDuration := time.Now().Unix() - history[1]
-			if idleDuration >= 300 {
+			if idleDuration >= keep_alive_sec {
 				return true
 			} else {
 				return false
