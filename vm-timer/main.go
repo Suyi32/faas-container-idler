@@ -55,6 +55,7 @@ func main() {
 	log.Println("Start running VM Timer.")
 	log.Println("Reconcile Interval: ", reconcileInterval)
 	log.Println("Save Frequency: ", saveFrequency)
+	log.Printf("\n")
 
 	counter := 0
 	for {
@@ -64,11 +65,7 @@ func main() {
 		counter += 1
 		if counter % saveFrequency == 0 {
 			//print and save timer information
-			log.Printf("\n")
-			for nodeName, nodeTimer := range nodeTimerMap {
-				log.Println(nodeName, fmt.Sprint(nodeTimer))
-			}
-			log.Printf("\n")
+			getResults(nodeTimerMap)
 		}
 		log.Printf("\n")
 	}
@@ -127,4 +124,16 @@ func reconcile(clientset *kubernetes.Clientset, nodeTimerMap map[string]*nodeTim
 
 	}
 
+}
+
+func getResults(nodeTimerMap map[string]*nodeTimer) {
+	log.Printf("\n")
+	var sum int64 = 0
+	for nodeName, nodeTimer := range nodeTimerMap {
+		log.Println(nodeName, fmt.Sprint(nodeTimer))
+		sum += nodeTimer.Duration
+	}
+	log.Println("Total VM time: ", sum)
+
+	log.Printf("\n")
 }
