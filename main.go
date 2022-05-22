@@ -22,7 +22,7 @@ import (
 )
 
 const metricPort = 8081
-const keep_alive_sec = 300
+const keep_alive_sec = 20
 const savePath string = "/home/app/podLog"
 
 

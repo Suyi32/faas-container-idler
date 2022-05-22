@@ -6,7 +6,7 @@ import (
 	"log"
 	"context"
 	// "encoding/json"
-	"fmt"
+	// "fmt"
 
 	// "k8s.io/client-go/rest"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -22,7 +22,7 @@ type nodeTimer struct {
 
 func main() {
 
-	kubeconfig := flag.String("kubeconfig", "/home/suyi/.kube/config", "location to kubeconfig file")
+	kubeconfig := flag.String("kubeconfig", "/etc/kubernetes/kubelet.conf", "location to kubeconfig file")
 	flag.Parse()
 
 	config, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
@@ -67,7 +67,7 @@ func main() {
 			//print and save timer information
 			getResults(nodeTimerMap)
 		}
-		log.Printf("\n")
+		// log.Printf("\n")
 	}
 }
 
@@ -77,9 +77,9 @@ func reconcile(clientset *kubernetes.Clientset, nodeTimerMap map[string]*nodeTim
 		panic(err.Error())
 	}
 
-	for node_idx, node := range nodes.Items{
+	for _, node := range nodes.Items{
 		nodeName := node.Name
-		log.Println(node_idx, " Node name: ", nodeName)
+		// log.Println(node_idx, " Node name: ", nodeName)
 
 		pods, err := clientset.CoreV1().Pods("openfaas-fn").List(context.Background(), metav1.ListOptions{FieldSelector: "spec.nodeName="+nodeName})
 		if err != nil {
@@ -94,11 +94,10 @@ func reconcile(clientset *kubernetes.Clientset, nodeTimerMap map[string]*nodeTim
 				// log.Println(pod_idx, " appName: ", appName)
 			}
 		}
-		log.Printf("Node: %s: %d func pods.\n", nodeName, funcCounter)
 		
 		curNodeTimer, ok := nodeTimerMap[nodeName]
 		if !ok {
-			log.Println("not found")
+			log.Println(nodeName, "not found. Will create a entry in the map.")
 			nodeTimerMap[nodeName] = &nodeTimer {
 				Status: funcCounter != 0,
 				LastStamp: time.Now().Unix(), 	
@@ -110,18 +109,20 @@ func reconcile(clientset *kubernetes.Clientset, nodeTimerMap map[string]*nodeTim
 
 		if curNodeTimer.Status {
 			// last status is running
-			log.Println("Previous status: running")
+			// log.Println("Previous status: running")
 			curNodeTimer.Status    = (funcCounter != 0)
 			curNodeTimer.Duration  += time.Now().Unix() - curNodeTimer.LastStamp
 			curNodeTimer.LastStamp = time.Now().Unix() 
 		} else {
 			// last status is idle
-			log.Println("Previous status: idle")
+			// log.Println("Previous status: idle")
 			curNodeTimer.Status    = (funcCounter != 0)
 			curNodeTimer.LastStamp =  time.Now().Unix()
 		}
-		log.Println("in func ", fmt.Sprint(*nodeTimerMap[nodeName]))
-
+		// log.Println("in func ", fmt.Sprint(*nodeTimerMap[nodeName]))
+		if curNodeTimer.Duration != 0 {
+			log.Printf("Node: %s: %d func pods.\n", nodeName, funcCounter)
+		}
 	}
 
 }
@@ -129,8 +130,8 @@ func reconcile(clientset *kubernetes.Clientset, nodeTimerMap map[string]*nodeTim
 func getResults(nodeTimerMap map[string]*nodeTimer) {
 	log.Printf("\n")
 	var sum int64 = 0
-	for nodeName, nodeTimer := range nodeTimerMap {
-		log.Println(nodeName, fmt.Sprint(nodeTimer))
+	for _, nodeTimer := range nodeTimerMap {
+		// log.Println(nodeName, fmt.Sprint(nodeTimer))
 		sum += nodeTimer.Duration
 	}
 	log.Println("Total VM time: ", sum)
