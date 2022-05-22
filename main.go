@@ -248,10 +248,13 @@ func getIfRemove(total int64, inflight int64, history []int64) bool {
 			} else {
 				return false
 			}
-		} else {
+		} else if history[0] < total {
+			// means new requests completed in the past reconcile period
 			history[0] = total
 			history[1] = time.Now().Unix()
 			return false
+		} else {
+			log.Fatal("historic total number of req exceeds the current one, impossible! ")
 		}
 	} else {
 		history[1] = time.Now().Unix()

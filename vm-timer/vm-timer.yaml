@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: vm-timer
-        image: smarterlsy/vm-timer@sha256:d34d77b991bae0c8d7c387d66cb36f2f2634e6388d9512e12745d2532457b167
+        image: smarterlsy/vm-timer@sha256:dfb3c0e5eb74015597e26c6b46f1665c90c37f6c8f3525385aff07bcae16a921
         imagePullPolicy: Always
         env:
           - name: inactivity_duration
