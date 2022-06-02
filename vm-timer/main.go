@@ -5,6 +5,7 @@ import (
 	"flag"
 	"log"
 	"context"
+	"strings"
 	// "encoding/json"
 	// "fmt"
 
@@ -19,6 +20,15 @@ type nodeTimer struct {
     LastStamp 	int64
 	Duration	int64
 }
+
+type podTimer struct {
+    LastStamp 	int64
+	Duration	int64
+}
+
+var Functions [10]string = [10]string{"get-duration", "get-media-meta", "query-vacancy", "reserve-spot",
+										"classify-image-ts", "detect-object-ts", "detect-anomaly", "ingest-data",
+											"anonymize-log", "filter-log"}
 
 func main() {
 
@@ -48,9 +58,10 @@ func main() {
 	*/
 	
 	nodeTimerMap := make(map[string]*nodeTimer)
+	podTimerMap := make(map[string]*podTimer)
 
-	reconcileInterval := time.Second * 3
-	saveFrequency     := 2
+	reconcileInterval := time.Second * 2
+	saveFrequency     := 1
 
 	log.Println("Start running VM Timer.")
 	log.Println("Reconcile Interval: ", reconcileInterval)
@@ -59,23 +70,24 @@ func main() {
 
 	counter := 0
 	for {
-		reconcile(clientset, nodeTimerMap)
+		reconcile(clientset, nodeTimerMap, podTimerMap)
 		time.Sleep(reconcileInterval)
 		
 		counter += 1
 		if counter % saveFrequency == 0 {
 			//print and save timer information
-			getResults(nodeTimerMap)
+			getResults(nodeTimerMap, podTimerMap)
 		}
 		// log.Printf("\n")
 	}
 }
 
-func reconcile(clientset *kubernetes.Clientset, nodeTimerMap map[string]*nodeTimer) {
+func reconcile(clientset *kubernetes.Clientset, nodeTimerMap map[string]*nodeTimer, podTimerMap map[string]*podTimer) {
 	nodes, err := clientset.CoreV1().Nodes().List(context.Background(), metav1.ListOptions{})
 	if err != nil {
 		panic(err.Error())
 	}
+	var podName string
 
 	for _, node := range nodes.Items{
 		nodeName := node.Name
@@ -92,6 +104,18 @@ func reconcile(clientset *kubernetes.Clientset, nodeTimerMap map[string]*nodeTim
 			if ok {
 				funcCounter += 1
 				// log.Println(pod_idx, " appName: ", appName)
+				podName = pod.ObjectMeta.GetName()
+				curPodTimer, ok := podTimerMap[podName]
+				if !ok {
+					log.Println(podName, "not found. Will create a entry in the map.")
+					podTimerMap[podName] = &podTimer {
+						LastStamp: time.Now().Unix(), 	
+						Duration: 0,
+					}
+				} else {
+					curPodTimer.Duration += time.Now().Unix() - curPodTimer.LastStamp
+					curPodTimer.LastStamp =  time.Now().Unix()
+				}
 			}
 		}
 		
@@ -127,14 +151,28 @@ func reconcile(clientset *kubernetes.Clientset, nodeTimerMap map[string]*nodeTim
 
 }
 
-func getResults(nodeTimerMap map[string]*nodeTimer) {
+func getResults(nodeTimerMap map[string]*nodeTimer, podTimerMap map[string]*podTimer) {
 	log.Printf("\n")
 	var sum int64 = 0
 	for _, nodeTimer := range nodeTimerMap {
 		// log.Println(nodeName, fmt.Sprint(nodeTimer))
 		sum += nodeTimer.Duration
 	}
-	log.Println("Total VM time: ", sum)
+	log.Println("[TotalVMTime]: ", sum)
 
+	var functionMap map[string]int64 = make(map[string]int64)
+	var parts []string
+	var funcName string
+	for podName, _ := range podTimerMap {
+		parts = strings.Split(podName, "-")
+		funcName = strings.Join(parts[:len(parts)-2], "-")
+
+		functionMap[funcName] += podTimerMap[podName].Duration
+    }
+
+	for funcKey, _ := range functionMap {
+		log.Println("[TotalFuncTime]:", funcKey, functionMap[funcKey])
+    }
+	
 	log.Printf("\n")
 }
